@@ -23,9 +23,14 @@ jobs:
           if [ ! -d "$FLUTTER_HOME" ]; then
             git clone --depth 1 -b stable https://github.com/flutter/flutter.git "$FLUTTER_HOME"
           fi
+
+          # Make the flutter binary available to subsequent steps
+          echo "$FLUTTER_HOME/bin" >> $GITHUB_PATH
+
+          # Ensure flutter is available for the rest of this step
           export PATH="$FLUTTER_HOME/bin:$PATH"
-          # Ensure flutter is available for the rest of the job
           flutter --version
+
           # Precache iOS artifacts to avoid interactive prompts later
           flutter precache --ios
         env:
