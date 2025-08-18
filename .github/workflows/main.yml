@@ -16,22 +16,36 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.4.app
 
-      - name: Install Flutter (manual for macOS arm64)
+      # --- Cache Flutter SDK and pub cache so we don't reinstall every run ---
+      - name: Restore Flutter & pub cache
+        uses: actions/cache@v4
+        with:
+          # Cache the checked-out Flutter SDK (if you cache the whole SDK you will avoid re-cloning)
+          # and the Dart/Flutter pub cache to speed up `flutter pub get`.
+          path: |
+            $HOME/flutter
+            $HOME/.pub-cache
+          # Use pubspec.lock + workflow file as inputs so cache updates when deps or workflow change
+          key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.lock') }}-${{ hashFiles('.github/workflows/main.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-
+
+      - name: Install Flutter (manual for macOS arm64, reuses restored cache when available)
         run: |
           set -e
           export FLUTTER_HOME="$HOME/flutter"
+          # If cache restored the SDK directory will already exist; only clone on cache-miss
           if [ ! -d "$FLUTTER_HOME" ]; then
             git clone --depth 1 -b stable https://github.com/flutter/flutter.git "$FLUTTER_HOME"
           fi
 
-          # Make the flutter binary available to subsequent steps
+          # Persist flutter to PATH for subsequent steps
           echo "$FLUTTER_HOME/bin" >> $GITHUB_PATH
-
-          # Ensure flutter is available for the rest of this step
+          # Ensure flutter is available in this step
           export PATH="$FLUTTER_HOME/bin:$PATH"
-          flutter --version
 
-          # Precache iOS artifacts to avoid interactive prompts later
+          # Validate and precache iOS artifacts (no prompts)
+          flutter --version
           flutter precache --ios
         env:
           DEVSHELL_DISABLE_PROMPT: "1"
