@@ -56,7 +56,7 @@ jobs:
       - name: Generate iOS project artifacts (no codesign)
         run: |
           # Generate Xcode workspace and intermediate iOS files without signing
-          flutter build ios --no-codesign --release
+          flutter build ios --no-codesign --debug
 
       - name: Prepare export options (development)
         run: |
@@ -76,6 +76,15 @@ jobs:
           </dict>
           </plist>
           EOF
+
+      - name: Create App Store Connect API key file
+        run: |
+          mkdir -p "$HOME/api_keys"
+          # Write the private key contents from the secret into a file
+          printf '%s' "$APPSTORE_API_KEY" > "$HOME/api_keys/AuthKey.p8"
+          chmod 600 "$HOME/api_keys/AuthKey.p8"
+        env:
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
 
       - name: Archive with xcodebuild (use API Key + Team for automatic development signing)
         env:
@@ -98,7 +107,7 @@ jobs:
             CODE_SIGN_STYLE=Automatic \
             -allowProvisioningUpdates \
             -allowProvisioningDeviceRegistration \
-            -authenticationKeyPath ~/api_keys/AuthKey.p8 \
+            -authenticationKeyPath "$HOME/api_keys/AuthKey.p8" \
             -authenticationKeyID "$APPSTORE_API_KEY_ID" \
             -authenticationKeyIssuerID "$APPSTORE_API_ISSUER_ID"
 
@@ -111,3 +120,8 @@ jobs:
         with:
           name: ios-dev-ipa
           path: build/*.ipa
+
+      - name: Remove App Store Connect API key
+        if: always()
+        run: |
+          rm -f "$HOME/api_keys/AuthKey.p8" || true
