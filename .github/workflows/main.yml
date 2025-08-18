@@ -29,7 +29,7 @@ jobs:
           key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.lock') }}-${{ hashFiles('.github/workflows/main.yml') }}
           restore-keys: |
             ${{ runner.os }}-flutter-
-
+      
       - name: Install Flutter (manual for macOS arm64, reuses restored cache when available)
         run: |
           set -e
@@ -76,15 +76,14 @@ jobs:
           </dict>
           </plist>
           EOF
-
-      - name: Create App Store Connect API key file
+          
+      - name: Write App Store Connect API key (.p8)
         run: |
-          mkdir -p "$HOME/api_keys"
-          # Write the private key contents from the secret into a file
-          printf '%s' "$APPSTORE_API_KEY" > "$HOME/api_keys/AuthKey.p8"
-          chmod 600 "$HOME/api_keys/AuthKey.p8"
-        env:
-          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+          mkdir -p ~/api_keys
+          printf '%s\n' "${{ secrets.APPSTORE_API_PRIVATE_KEY }}" > ~/api_keys/AuthKey.p8
+          # 可选：把 CRLF 转为 LF
+          sed -i '' -e 's/\r$//' ~/api_keys/AuthKey.p8 || true
+          chmod 600 ~/api_keys/AuthKey.p8
 
       - name: Archive with xcodebuild (use API Key + Team for automatic development signing)
         env:
@@ -107,7 +106,7 @@ jobs:
             CODE_SIGN_STYLE=Automatic \
             -allowProvisioningUpdates \
             -allowProvisioningDeviceRegistration \
-            -authenticationKeyPath "$HOME/api_keys/AuthKey.p8" \
+            -authenticationKeyPath ~/api_keys/AuthKey.p8 \
             -authenticationKeyID "$APPSTORE_API_KEY_ID" \
             -authenticationKeyIssuerID "$APPSTORE_API_ISSUER_ID"
 
