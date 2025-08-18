@@ -16,25 +16,20 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.4.app
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: 'stable'
-
-      - name: Ensure required secrets present
+      - name: Install Flutter (manual for macOS arm64)
         run: |
-          if [ -z "${{ secrets.APPSTORE_API_KEY_ID }}" ] || [ -z "${{ secrets.APPSTORE_API_ISSUER_ID }}" ] || [ -z "${{ secrets.APPSTORE_API_PRIVATE_KEY }}" ] || [ -z "${{ secrets.APPLE_DEVELOPMENT_TEAM_ID }}" ]; then
-            echo "Missing one of: APPSTORE_API_KEY_ID, APPSTORE_API_ISSUER_ID, APPSTORE_API_PRIVATE_KEY, APPLE_DEVELOPMENT_TEAM_ID"
-            exit 1
+          set -e
+          export FLUTTER_HOME="$HOME/flutter"
+          if [ ! -d "$FLUTTER_HOME" ]; then
+            git clone --depth 1 -b stable https://github.com/flutter/flutter.git "$FLUTTER_HOME"
           fi
-          echo "All required secrets present"
-
-      - name: Write App Store Connect API Key (.p8)
-        run: |
-          mkdir -p ~/api_keys
-          printf '%s\n' "${{ secrets.APPSTORE_API_PRIVATE_KEY }}" > ~/api_keys/AuthKey.p8
-          sed -i '' -e 's/\r$//' ~/api_keys/AuthKey.p8 || true
-          chmod 600 ~/api_keys/AuthKey.p8
+          export PATH="$FLUTTER_HOME/bin:$PATH"
+          # Ensure flutter is available for the rest of the job
+          flutter --version
+          # Precache iOS artifacts to avoid interactive prompts later
+          flutter precache --ios
+        env:
+          DEVSHELL_DISABLE_PROMPT: "1"
 
       - name: Flutter pub get
         run: flutter pub get
