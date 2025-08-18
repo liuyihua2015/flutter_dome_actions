@@ -1,0 +1,126 @@
+name: Flutter iOS Build (Development)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-ios-dev:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+
+      # --- Cache Flutter SDK and pub cache so we don't reinstall every run ---
+      - name: Restore Flutter & pub cache
+        uses: actions/cache@v4
+        with:
+          # Cache the checked-out Flutter SDK (if you cache the whole SDK you will avoid re-cloning)
+          # and the Dart/Flutter pub cache to speed up `flutter pub get`.
+          path: |
+            $HOME/flutter
+            $HOME/.pub-cache
+          # Use pubspec.lock + workflow file as inputs so cache updates when deps or workflow change
+          key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.lock') }}-${{ hashFiles('.github/workflows/main.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-
+      
+      - name: Install Flutter (manual for macOS arm64, reuses restored cache when available)
+        run: |
+          set -e
+          export FLUTTER_HOME="$HOME/flutter"
+          # If cache restored the SDK directory will already exist; only clone on cache-miss
+          if [ ! -d "$FLUTTER_HOME" ]; then
+            git clone --depth 1 -b stable https://github.com/flutter/flutter.git "$FLUTTER_HOME"
+          fi
+
+          # Persist flutter to PATH for subsequent steps
+          echo "$FLUTTER_HOME/bin" >> $GITHUB_PATH
+          # Ensure flutter is available in this step
+          export PATH="$FLUTTER_HOME/bin:$PATH"
+
+          # Validate and precache iOS artifacts (no prompts)
+          flutter --version
+          flutter precache --ios
+        env:
+          DEVSHELL_DISABLE_PROMPT: "1"
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Generate iOS project artifacts (no codesign)
+        run: |
+          # Generate Xcode workspace and intermediate iOS files without signing
+          flutter build ios --no-codesign --debug
+
+      - name: Prepare export options (development)
+        run: |
+          cat > ExportOptions.plist <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>development</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>stripSwiftSymbols</key>
+            <true/>
+            <key>compileBitcode</key>
+            <false/>
+          </dict>
+          </plist>
+          EOF
+          
+      - name: Write App Store Connect API key (.p8)
+        run: |
+          mkdir -p ~/api_keys
+          printf '%s\n' "${{ secrets.APPSTORE_API_PRIVATE_KEY }}" > ~/api_keys/AuthKey.p8
+          # 可选：把 CRLF 转为 LF
+          sed -i '' -e 's/\r$//' ~/api_keys/AuthKey.p8 || true
+          chmod 600 ~/api_keys/AuthKey.p8
+
+      - name: Archive with xcodebuild (use API Key + Team for automatic development signing)
+        env:
+          DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM_ID }}
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+        run: |
+          WORKSPACE="ios/Runner.xcworkspace"
+          SCHEME="Runner"
+          ARCHIVE_PATH="$PWD/build/Runner.xcarchive"
+          mkdir -p build
+
+          /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -destination "generic/platform=iOS" \
+            -configuration Release clean archive \
+            -archivePath "$ARCHIVE_PATH" \
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
+            CODE_SIGN_STYLE=Automatic \
+            -allowProvisioningUpdates \
+            -allowProvisioningDeviceRegistration \
+            -authenticationKeyPath ~/api_keys/AuthKey.p8 \
+            -authenticationKeyID "$APPSTORE_API_KEY_ID" \
+            -authenticationKeyIssuerID "$APPSTORE_API_ISSUER_ID"
+
+      - name: Export IPA (development)
+        run: |
+          xcodebuild -exportArchive -archivePath "$PWD/build/Runner.xcarchive" -exportOptionsPlist ExportOptions.plist -exportPath "$PWD/build"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-dev-ipa
+          path: build/*.ipa
+
+      - name: Remove App Store Connect API key
+        if: always()
+        run: |
+          rm -f "$HOME/api_keys/AuthKey.p8" || true
