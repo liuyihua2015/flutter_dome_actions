@@ -13,9 +13,7 @@ jobs:
       FLUTTER_VERSION: 3.32.8
       APP_IDENTIFIER: com.liuyihua.myapp
       APPLE_DEVELOPMENT_TEAM_ID: ${{ secrets.APPLE_DEVELOPMENT_TEAM_ID }}
-      APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
-      APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
-      APPSTORE_API_P8: ${{ secrets.APPLE_API_KEY_P8 }} # base64 编码后的 .p8 文件内容
+      APPSTORE_API_JSON: ${{ secrets.APPSTORE_API_JSON }} # base64 编码后的 AuthKey.json 文件内容
 
     steps:
       - name: Checkout repository
@@ -27,13 +25,9 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: ${{ env.FLUTTER_CHANNEL }}
 
-      - name: Decode .p8 key
-        run: |
-          echo "${APPSTORE_API_P8}" | base64 --decode > AuthKey.p8
-
       - name: Decode AuthKey.json
         run: |
-          echo "${{ secrets.APPSTORE_API_JSON }}" | base64 --decode > AuthKey.json
+          echo "${{ secrets.APPSTORE_API_JSON }}" | base64 --decode > fastlane/AuthKey.json
 
       - name: Install dependencies
         run: flutter pub get
@@ -43,12 +37,8 @@ jobs:
 
       - name: Generate Certificates & Provisioning Profiles
         run: |
-          fastlane match development \
-            --type development \
-            --app_identifier $APP_IDENTIFIER \
-            --team_id $APPLE_DEVELOPMENT_TEAM_ID \
-            --readonly false \
-            --api-key AuthKey.json
+          cd fastlane
+          fastlane ios dev_match
 
       - name: Build iOS IPA
         run: |
