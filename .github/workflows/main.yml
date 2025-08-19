@@ -2,7 +2,7 @@ name: Flutter iOS Build (Development)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
@@ -29,7 +29,7 @@ jobs:
           key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.lock') }}-${{ hashFiles('.github/workflows/main.yml') }}
           restore-keys: |
             ${{ runner.os }}-flutter-
-      
+
       - name: Install Flutter (manual for macOS arm64, reuses restored cache when available)
         run: |
           set -e
@@ -53,11 +53,17 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
+      - name: Validate iOS configuration
+        run: |
+          # Validate bundle identifier and development team
+          echo "Validating iOS configuration..."
+          grep -r "PRODUCT_BUNDLE_IDENTIFIER" ios/ || echo "Warning: Bundle identifier not found"
+          grep -r "DEVELOPMENT_TEAM" ios/ || echo "Warning: Development team not found"
+
       - name: Generate iOS project artifacts (no codesign)
         run: |
           # Generate Xcode workspace and intermediate iOS files without signing
-          # flutter build ios --profile --no-codesign
-          flutter build ipa --export-method development
+          flutter build ios --release --no-codesign
 
       - name: Prepare export options (development)
         run: |
@@ -77,7 +83,7 @@ jobs:
           </dict>
           </plist>
           EOF
-          
+
       - name: Write App Store Connect API key (.p8)
         run: |
           mkdir -p ~/api_keys
@@ -92,11 +98,22 @@ jobs:
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
           APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
         run: |
+          # Check if required secrets are available
+          if [ -z "$DEVELOPMENT_TEAM" ] || [ -z "$APPSTORE_API_KEY_ID" ] || [ -z "$APPSTORE_API_ISSUER_ID" ]; then
+            echo "❌ Missing required secrets for codesigning"
+            echo "Please ensure these secrets are set:"
+            echo "- APPLE_DEVELOPMENT_TEAM_ID"
+            echo "- APPSTORE_API_KEY_ID"
+            echo "- APPSTORE_API_ISSUER_ID"
+            exit 1
+          fi
+
           WORKSPACE="ios/Runner.xcworkspace"
           SCHEME="Runner"
           ARCHIVE_PATH="$PWD/build/Runner.xcarchive"
           mkdir -p build
 
+          echo "📦 Archiving iOS app with development signing..."
           /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
@@ -109,7 +126,10 @@ jobs:
             -allowProvisioningDeviceRegistration \
             -authenticationKeyPath ~/api_keys/AuthKey.p8 \
             -authenticationKeyID "$APPSTORE_API_KEY_ID" \
-            -authenticationKeyIssuerID "$APPSTORE_API_ISSUER_ID"
+            -authenticationKeyIssuerID "$APPSTORE_API_ISSUER_ID" || {
+              echo "❌ Archive failed. Check provisioning profiles and certificates."
+              exit 1
+            }
 
       - name: Export IPA (development)
         run: |
