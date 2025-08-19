@@ -1,0 +1,17 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Generate development certificate and provisioning profile"
+  lane :dev_match do
+    # 读取 decode 后的 JSON 文件
+    api_key = JSON.parse(File.read("AuthKey.json"))
+
+    match(
+      type: "development",
+      app_identifier: "com.liuyihua.myapp",
+      team_id: ENV["APPLE_DEVELOPMENT_TEAM_ID"],
+      readonly: false,
+      api_key: api_key
+    )
+  end
+end
