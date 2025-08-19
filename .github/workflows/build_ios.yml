@@ -1,0 +1,65 @@
+name: Flutter iOS Build
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    env:
+      FLUTTER_CHANNEL: stable
+      FLUTTER_VERSION: 3.32.8
+      APP_IDENTIFIER: com.liuyihua.myapp
+      APPLE_DEVELOPMENT_TEAM_ID: ${{ secrets.APPLE_DEVELOPMENT_TEAM_ID }}
+      APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+      APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+      APPSTORE_API_P8: ${{ secrets.APPLE_API_KEY_P8 }} # base64 编码后的 .p8 文件内容
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: ${{ env.FLUTTER_CHANNEL }}
+
+      - name: Decode .p8 key
+        run: |
+          echo "${APPSTORE_API_P8}" | base64 --decode > AuthKey.p8
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Install fastlane
+        run: sudo gem install fastlane
+
+      - name: Generate Certificates & Provisioning Profiles
+        run: |
+          fastlane match development \
+            --type development \
+            --app_identifier $APP_IDENTIFIER \
+            --team_id $APPLE_DEVELOPMENT_TEAM_ID \
+            --readonly false \
+            --api_key_path AuthKey.p8 \
+            --api_key_id $APPSTORE_API_KEY_ID \
+            --api_issuer_id $APPSTORE_API_ISSUER_ID
+
+      - name: Build iOS IPA
+        run: |
+          flutter build ios --release --no-codesign
+
+          xcodebuild -workspace ios/Runner.xcworkspace \
+                     -scheme Runner \
+                     -sdk iphoneos \
+                     -configuration Release \
+                     -allowProvisioningUpdates \
+                     -archivePath $PWD/build/Runner.xcarchive archive
+
+          xcodebuild -exportArchive \
+                     -archivePath $PWD/build/Runner.xcarchive \
+                     -exportOptionsPlist ios/ExportOptions.plist \
+                     -exportPath $PWD/build/ipa
