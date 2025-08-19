@@ -56,7 +56,8 @@ jobs:
       - name: Generate iOS project artifacts (no codesign)
         run: |
           # Generate Xcode workspace and intermediate iOS files without signing
-          flutter build ios --profile --no-codesign
+          # flutter build ios --profile --no-codesign
+          flutter build ipa --export-method development
 
       - name: Prepare export options (development)
         run: |
